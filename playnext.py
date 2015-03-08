@@ -185,6 +185,9 @@ files = get_all_files(file_dir, pattern, starting_num, num_files)
 debug_print(1, 'Files:')
 debug_print(1, files)
 if files is not None:
+    print("Playing:")
+    for file in files:
+        print(os.path.basename(file))
     output = play_files(files)
     debug_print(2, 'Output:')
     debug_print(2, output)

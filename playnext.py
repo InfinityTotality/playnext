@@ -79,7 +79,7 @@ def get_all_files(file_dir, file_pattern, starting_num, num_files):
 
 
 def play_files(files):
-    lua_path = os.path.join(os.environ['HOME'],'.mpv/file_completion.lua')
+    lua_path = os.path.join(os.path.expanduser('~'),'.mpv/file_completion.lua')
     if not os.path.exists(lua_path):
         print('Warning: mpv file completion script not found' +
                '({})'.format(lua_path))
@@ -96,57 +96,91 @@ def play_files(files):
         return subprocess.check_output(mpv_command)
 
 
+def process_output(output_lines, file_pattern, starting_num):
+    num_watched = 0
+    final_percent = 0
+    line_gen = (line for line in output_lines)
+    for line in line_gen:
+        file_name = insert_file_number(file_pattern,
+                                       starting_num + num_watched)
+        if re.match('\[file_completion\] started .*' +
+                    re.escape(file_name), line) is not None:
+            num_watched += 1
+            final_percent = 0
+            for line in line_gen:
+                match = re.match('\[file_completion\] percent ' +
+                        '([0-9]+)\.[0-9]*', line)
+                if match is not None:
+                    final_percent = int(match.group(1))
+                elif line == '[file_completion] ended':
+                    break
+                else:
+                    print('Unexpected line during episode:')
+                    print(line)
+                    break
+        elif re.match('\[file_completion\] percent ' +
+                '([0-9]+)\.[0-9]*', line) is not None:
+            pass
+        else:
+            print('Unexpected line when looking for start of episode {}: '\
+                  .format(starting_num + num_watched))
+            print(line)
+            return None
+    if final_percent < 90 and num_watched > 0:
+        num_watched -= 1
+
+    return num_watched
+
+
 def update_config(file_pattern, output, config_file, starting_num, num_files):
     if output is None:
         final_num = starting_num + num_files
     else:
-        final_num = starting_num
-        final_percent = 0
         output_lines = output.decode(sys.stdout.encoding).split('\n')
         output_lines = [line.strip() for line in output_lines if line != '']
         if len(output_lines) < 1:
             final_num = starting_num + num_files
         else:
-            line_gen = (line for line in output_lines)
-            for line in line_gen:
-                file_name = insert_file_number(file_pattern, final_num)
-                if re.match('\[file_completion\] started .*' + 
-                            re.escape(file_name), line) is not None:
-                    final_num += 1
-                    final_percent = 0
-                    for line in line_gen:
-                        match = re.match('\[file_completion\] percent ' +
-                                '([0-9]+)\.[0-9]*', line)
-                        if match is not None:
-                            final_percent = int(match.group(1))
-                        elif line == '[file_completion] ended':
-                            break
-                        else:
-                            print('Unexpected line during episode:')
-                            print(line)
-                            return False
-                elif re.match('\[file_completion\] percent ' +
-                        '([0-9]+)\.[0-9]*', line) is not None:
-                    pass
-                else:
-                    print('Unexpected line when looking for start of ' +
-                            'episode {}:'.format(final_num))
-                    print(line)
-                    return False
-            if final_percent < 90 and final_num > starting_num:
-                final_num -= 1
+            num_watched = process_output(output_lines, file_pattern,
+                                         starting_num)
+            if num_watched is not None:
+                final_num = starting_num + num_watched
+            else:
+                final_num = starting_num + num_files
     debug_print(1, 'Updating config with pattern = "{}" and file number = {}'\
                 .format(file_pattern,final_num))
     with open(config_file, 'w') as f:
         f.write('{}\t{}\n'.format(file_pattern,final_num))
 
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description='A utility for keeping track of '+
+        'the last file played within a directory containing similarly named '+
+        'files. The utility will play the next n files within the specified ' +
+        'directory, starting from the file following the next file to play, '+
+        'where n is the number specified as the last argument, or 1 by '+
+        'default. Each file should include in its name a number which '+
+        'corresponds to its position in the list of files to be played. '+
+        'For example, if the files are episodes in a TV series, each file '+
+        'name should include the episode number.')
 
-parser.add_argument('-p', dest='pattern')
-parser.add_argument('-d', dest='directory')
-parser.add_argument('-s', dest='start')
-parser.add_argument('-v', dest='verbosity', action='count', default=0)
+parser.add_argument('-p', dest='pattern', help='Specify the pattern which '+
+        'matches files within the specified directory such that, using file '+
+        'globbing, *pattern* will match all the files to be played. The file '+
+        'number should be replaced with the special pattern |#|. The number '+
+        'of #s in this pattern corresponds to the number of digits in the '+
+        'first file\'s number.')
+parser.add_argument('-d', dest='directory', help='Specify the directory in '+
+        'which the files to be played are located. The current directory '+
+        'will be used if none is specified. The file pattern and number of '+
+        'the next file to play are read from and stored in this directory '+
+        'as well.')
+parser.add_argument('-s', dest='start', help='Specify the file number from '+
+        'which to start playing, overriding the saved number of the next '+
+        'file to play. The the next file to play will be saved normally '+
+        'starting from this number.')
+parser.add_argument('-v', dest='verbosity', action='count', default=0,
+        help='Enable additional debugging messages. Can be specified '+
+        'multiple times for greater verbosity.')
 parser.add_argument('number', nargs='?', default=1)
 
 args = parser.parse_args()

@@ -8,23 +8,83 @@ import argparse
 import subprocess
 
 
-def debug_print(message_level, message):
+def debug_print(message_level, message, file=sys.stderr):
     global debug_level
     if debug_level >= message_level:
-        print(message)
+        print(message,file=file)
 
 
-def parse_config(config_file):
-    if not os.path.isfile(config_file):
+def parse_local_config(config_file):
+    try:
+       with open(config_file) as f:
+            config_line = f.readline()
+    except:
+        return None
+    if re.match('[^\t]*\t[0-9]+', config_line) is None:
+        print('Invalid line in config file: "{}"'.format(config_line),
+                file=sys.stderr)
         return None
     else:
+        return config_line.strip().split('\t')
+
+
+def update_local_config(config_file, file_pattern, next_num):
+    debug_print(1, 'Updating config with pattern = "{}" and file number = {}'\
+                .format(file_pattern,next_num))
+    with open(config_file, 'w') as f:
+        f.write('{}\t{}\n'.format(file_pattern,next_num))
+
+
+def parse_global_config(config_file, media_dir):
+    try:
         with open(config_file) as f:
-            config_line = f.readline()
-        if re.match('[^\t]*\t[0-9]+', config_line) is None:
-            print('Invalid line in config file {}'.format(config_file))
+            config_lines = f.read().splitlines()
+    except:
+        return None
+    for line in config_lines:
+        line_parts = line.split('\t')
+        if len(line_parts) < 3:
+            print('Invalid line in config file: "{}"'.format(line),
+                  file=sys.stderr)
             return None
-        else:
-            return config_line.strip().split('\t')
+        elif line_parts[2] == os.path.basename(media_dir):
+            return (line_parts[0], line_parts[1])
+    return None
+
+
+def update_global_config(config_file, file_pattern, next_num, media_dir):
+    new_lines = []
+    if os.path.isfile(config_file):
+        media_basedir = os.path.basename(media_dir)
+        with open(config_file) as f:
+            existing_lines = f.readlines()
+        for line in existing_lines:
+            line_parts = line.split('\t')
+            if len(line_parts) != 3:
+                print('Invalid line in config file: "{}"'.format(line),
+                        file=sys.stderr)
+                raise(IndexError)
+            if line_parts[2].rstrip('\n') != media_basedir:
+                new_lines.append(line)
+    new_lines.append('{}\t{}\t{}\n'.format(file_pattern, next_num, media_basedir))
+    with open(config_file, 'w') as f:
+        f.writelines(new_lines)
+
+
+def update_config(file_pattern, output, config_file,
+        starting_num, num_requested, config_mode, media_dir):
+    output_lines = split_output_lines(output)
+    if output_lines is None:
+        final_num = starting_num + num_requested
+    else:
+        num_watched = process_output(output_lines, file_pattern, starting_num)
+        final_num = starting_num + num_watched
+    if config_mode == 'local':
+        debug_print(1, 'Mode is local')
+        update_local_config(config_file, file_pattern, final_num)
+    elif config_mode == 'global':
+        debug_print(1, 'Mode is global')
+        update_global_config(config_file, file_pattern, final_num, media_dir)
 
 
 def insert_file_number(file_pattern, file_number):
@@ -79,7 +139,7 @@ def get_all_files(file_dir, file_pattern, starting_num, num_files):
 
 
 def play_files(files):
-    lua_path = os.path.join(os.path.expanduser('~'),'.mpv/file_completion.lua')
+    lua_path = os.path.expanduser('~/.mpv/file_completion.lua')
     if not os.path.exists(lua_path):
         print('Warning: mpv file completion script not found' +
                '({})'.format(lua_path))
@@ -94,6 +154,18 @@ def play_files(files):
                        '--msg-level=all=no:file_completion=info']
         mpv_command.extend(files)
         return subprocess.check_output(mpv_command)
+
+
+def split_output_lines(output):
+    if output is None:
+        return None
+    else:
+        output_lines = output.decode(sys.stdout.encoding).splitlines()
+        output_lines = [line for line in output_lines if line != '']
+        if len(output_lines) < 1:
+            return None
+        else:
+            return output_lines
 
 
 def process_output(output_lines, file_pattern, starting_num):
@@ -112,7 +184,7 @@ def process_output(output_lines, file_pattern, starting_num):
                         '([0-9]+)\.[0-9]*', line)
                 if match is not None:
                     final_percent = int(match.group(1))
-                elif line == '[file_completion] ended':
+                elif line[0:23] == '[file_completion] ended':
                     break
                 else:
                     print('Unexpected line during episode:')
@@ -126,31 +198,10 @@ def process_output(output_lines, file_pattern, starting_num):
                   .format(starting_num + num_watched))
             print(line)
             return None
-    if final_percent < 90 and num_watched > 0:
+    if final_percent < 85 and num_watched > 0:
         num_watched -= 1
 
     return num_watched
-
-
-def update_config(file_pattern, output, config_file, starting_num, num_files):
-    if output is None:
-        final_num = starting_num + num_files
-    else:
-        output_lines = output.decode(sys.stdout.encoding).split('\n')
-        output_lines = [line.strip() for line in output_lines if line != '']
-        if len(output_lines) < 1:
-            final_num = starting_num + num_files
-        else:
-            num_watched = process_output(output_lines, file_pattern,
-                                         starting_num)
-            if num_watched is not None:
-                final_num = starting_num + num_watched
-            else:
-                final_num = starting_num + num_files
-    debug_print(1, 'Updating config with pattern = "{}" and file number = {}'\
-                .format(file_pattern,final_num))
-    with open(config_file, 'w') as f:
-        f.write('{}\t{}\n'.format(file_pattern,final_num))
 
 
 parser = argparse.ArgumentParser(description='A utility for keeping track of '+

@@ -54,18 +54,20 @@ def parse_global_config(config_file, media_dir):
 
 def update_global_config(config_file, file_pattern, next_num, media_dir):
     new_lines = []
-    if os.path.isfile(config_file):
-        media_basedir = os.path.basename(media_dir)
+    media_basedir = os.path.basename(media_dir)
+    try:
         with open(config_file) as f:
             existing_lines = f.readlines()
         for line in existing_lines:
             line_parts = line.split('\t')
             if len(line_parts) != 3:
-                print('Invalid line in config file: "{}"'.format(line),
-                        file=sys.stderr)
-                raise(IndexError)
-            if line_parts[2].rstrip('\n') != media_basedir:
+                print('Warning: invalid line in config file: "{}"'.format(line),
+                      file=sys.stderr)
                 new_lines.append(line)
+            elif line_parts[2].rstrip('\n') != media_basedir:
+                new_lines.append(line)
+    except:
+        pass
     new_lines.append('{}\t{}\t{}\n'.format(file_pattern, next_num, media_basedir))
     with open(config_file, 'w') as f:
         f.writelines(new_lines)

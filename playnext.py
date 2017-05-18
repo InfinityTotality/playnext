@@ -229,6 +229,11 @@ parser.add_argument('-s', dest='start', help='Specify the file number from '+
         'which to start playing, overriding the saved number of the next '+
         'file to play. The the next file to play will be saved normally '+
         'starting from this number.')
+parser.add_argument('-c', dest='config_mode', help='Specify which config '+
+        'mode should be used; either "global" or "local". Global uses a '+
+        'single config file in the home directory to store data. Local '+
+        'mode creates a file in each directory files are opened from '+
+        'to keep track of progress within that directory.', default='global')
 parser.add_argument('-v', dest='verbosity', action='count', default=0,
         help='Enable additional debugging messages. Can be specified '+
         'multiple times for greater verbosity.')
@@ -248,16 +253,22 @@ else:
         print('Invalid directory: {}'.format(args.directory))
         exit()
 
-config_file = os.path.join(file_dir, '.playnext')
+if args.config_mode == 'local':
+    config_file = os.path.join(file_dir, '.playnext')
+else:
+    config_file = os.path.expanduser('~/.playnextrc')
 config = None
 
 if args.start is None or args.pattern is None:
-    config = parse_config(config_file)
+    if args.config_mode == 'local':
+        config = parse_local_config(config_file)
+    else:
+        config = parse_global_config(config_file, file_dir)
     debug_print(1, 'Config:')
     debug_print(1, config)
     if config is None:
         if args.pattern is None:
-            print('No config file found in directory {}'.format(file_dir))
+            print('No config found for directory {}'.format(file_dir))
             print('Please specify a pattern with -p')
             exit()
 
@@ -276,7 +287,8 @@ if files is not None:
     output = play_files(files)
     debug_print(2, 'Output:')
     debug_print(2, output)
-    update_config(pattern, output, config_file, starting_num, num_files)
+    update_config(pattern, output, config_file, starting_num,
+                  num_files, args.config_mode, file_dir)
 else:
     print('Error: could not get file list')
-    update_config(pattern, None, config_file, starting_num, 0)
+    update_local_config(pattern, None, config_file, starting_num, 0)

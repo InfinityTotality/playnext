@@ -224,8 +224,8 @@ parser.add_argument('-p', dest='pattern', help='Specify the pattern which '+
         'first file\'s number.')
 parser.add_argument('-d', dest='directory', help='Specify the directory in '+
         'which the files to be played are located. The current directory '+
-        'will be used if none is specified. The file pattern and number of '+
-        'the next file to play are read from and stored in this directory '+
+        'will be used if none is specified. If using local config mode, '+
+        'the config file will be saved in and read from this directory '+
         'as well.')
 parser.add_argument('-s', dest='start', help='Specify the file number from '+
         'which to start playing, overriding the saved number of the next '+

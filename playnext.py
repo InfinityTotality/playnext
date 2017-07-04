@@ -293,4 +293,5 @@ if files is not None:
                   num_files, args.config_mode, file_dir)
 else:
     print('Error: could not get file list')
-    update_local_config(pattern, None, config_file, starting_num, 0)
+    update_config(pattern, None, config_file, starting_num,
+                  0, args.config_mode, file_dir)
